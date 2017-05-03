@@ -170,6 +170,7 @@ image3_load_kbag_loop:
 	CMP R3, R0
 	BGT image3_load_fail
 	
+	MOV R7, #1
 	CMP R3, #56
 	BEQ image3_load_kbag_key_256
 	CMP R3, #48
@@ -178,16 +179,12 @@ image3_load_kbag_loop:
 	BEQ image3_load_kbag_key_128
 	B image3_load_fail
 	
-image3_load_kbag_key_256:
-	MOV R7, #0x1
-	LSL R7, R7, #29
-	B image3_load_kbag_key_ok
-image3_load_kbag_key_192:
-	MOV R7, #0x1
-	LSL R7, R7, #28
-	B image3_load_kbag_key_ok
 image3_load_kbag_key_128:
 	MOV R7, #0
+image3_load_kbag_key_256:
+	LSL R7, R7, #1
+image3_load_kbag_key_192:
+	LSL R7, R7, #28
 
 image3_load_kbag_key_ok:
 	@ memmove(&iv, &keybag->iv, sizeof(iv) + keySizeBits / 8);
