@@ -1,5 +1,5 @@
 @ limera1n-shellcode.S
-@ Author: npupyshev
+@ Authors: npupyshev, axi0mX
 @ Shellcode for limera1n exploit with minor improvements:
 @ * reports PWND:[limera1n] in USB serial number string
 
