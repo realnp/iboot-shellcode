@@ -8,7 +8,7 @@ tutorials here.
 
 # Compilation
 
-arm-none-eabi-as -mthumb --fatal-warnings -o shellcode.o shellcode.S && arm-none-eabi-objcopy -O binary -o shellcode.bin shellcode.o
+Run `make`
 
 # Notice
 limera1n shellcode contains a piece of code from ipwndfu project by axi0mX
