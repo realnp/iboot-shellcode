@@ -5,7 +5,6 @@ tutorials here.
 # TODO
 1. limera1n shellcodes for earlier SecureROM versions
 2. Test S5L8930x limera1n shellcode with various AES key sizes and images (only tested with some RELEASE and DEVELOPMENT iBSS)
-3. Better validation of cryptState IMG3 keybag field
 
 # Compilation
 
